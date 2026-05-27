@@ -1,10 +1,10 @@
 const { SpotSize } = require('./enums');
 
 /**
- * ParkingSpot represents a single parking space.
- * It knows its size, floor, spot number, and whether it's occupied.
- * 
+ * ParkingSpot represents a single parking space on a floor.
+ *
  * Single Responsibility: Only manages its own occupancy state.
+ * Encapsulation: All fields are private, accessed via getters.
  */
 class ParkingSpot {
   #id;
@@ -14,6 +14,11 @@ class ParkingSpot {
   #isOccupied;
   #vehicle;
 
+  /**
+   * @param {number} floorNumber - Which floor this spot is on
+   * @param {number} spotNumber - Spot number within the floor
+   * @param {string} size - SpotSize enum value (small/medium/large)
+   */
   constructor(floorNumber, spotNumber, size) {
     this.#id = `F${floorNumber}-S${spotNumber}`;
     this.#floorNumber = floorNumber;
@@ -23,32 +28,42 @@ class ParkingSpot {
     this.#vehicle = null;
   }
 
+  /** @returns {string} Unique spot identifier (e.g., "F1-S3") */
   get id() {
     return this.#id;
   }
 
+  /** @returns {number} Floor number */
   get floorNumber() {
     return this.#floorNumber;
   }
 
+  /** @returns {number} Spot number on this floor */
   get spotNumber() {
     return this.#spotNumber;
   }
 
+  /** @returns {string} Spot size (small/medium/large) */
   get size() {
     return this.#size;
   }
 
+  /** @returns {boolean} Whether the spot is currently occupied */
   get isOccupied() {
     return this.#isOccupied;
   }
 
+  /** @returns {Vehicle|null} The vehicle parked here, or null */
   get vehicle() {
     return this.#vehicle;
   }
 
   /**
-   * Check if this spot can fit the given vehicle
+   * Check if this spot can accommodate the given vehicle.
+   * A larger spot can fit a smaller vehicle, but not vice versa.
+   *
+   * @param {Vehicle} vehicle - The vehicle to check
+   * @returns {boolean} True if the spot can fit the vehicle
    */
   canFit(vehicle) {
     if (this.#isOccupied) return false;
@@ -58,7 +73,10 @@ class ParkingSpot {
   }
 
   /**
-   * Park a vehicle in this spot
+   * Park a vehicle in this spot.
+   *
+   * @param {Vehicle} vehicle - The vehicle to park
+   * @throws {Error} If the spot is already occupied
    */
   park(vehicle) {
     if (this.#isOccupied) {
@@ -69,7 +87,10 @@ class ParkingSpot {
   }
 
   /**
-   * Remove the vehicle from this spot
+   * Remove the vehicle from this spot.
+   *
+   * @returns {Vehicle} The vehicle that was parked
+   * @throws {Error} If the spot is already empty
    */
   vacate() {
     if (!this.#isOccupied) {
@@ -81,6 +102,10 @@ class ParkingSpot {
     return vehicle;
   }
 
+  /**
+   * Serialize spot state for display/logging.
+   * @returns {object} Plain object representation
+   */
   toJSON() {
     return {
       id: this.#id,
