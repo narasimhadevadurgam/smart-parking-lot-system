@@ -167,12 +167,20 @@ class ParkingLot {
   }
 
   /**
-   * Simple lock mechanism for concurrency control.
-   * Ensures only one check-in/check-out happens at a time.
+   * Promise-based mutex for concurrency control.
+   * Ensures only one check-in/check-out executes at a time.
+   * Errors are logged and re-thrown (not swallowed).
+   *
+   * @param {Function} fn - Async function to execute under lock
+   * @returns {Promise} Result of fn
    */
   #withLock(fn) {
-    const execute = this.#lock.then(fn);
-    this.#lock = execute.catch(() => {}); // prevent lock from breaking on error
+    const execute = this.#lock.then(fn).catch((err) => {
+      console.error(`[ParkingLot Error] ${err.message}`);
+      throw err; // Re-throw so caller gets the error
+    });
+    // Keep the lock chain alive regardless of success/failure
+    this.#lock = execute.catch(() => {});
     return execute;
   }
 
