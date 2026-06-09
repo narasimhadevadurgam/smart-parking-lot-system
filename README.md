@@ -5,20 +5,23 @@ A Low-Level Design (LLD) implementation of a Smart Parking Lot System using Obje
 ## Features
 
 - Multi-floor parking lot with configurable spot sizes (Small, Medium, Large)
-- Automatic spot allocation based on vehicle size (exact-fit-first algorithm)
+- Entry/Exit gates with number plate scanning
+- Automatic spot allocation using Strategy Pattern (FirstAvailable, NearestFirst)
+- Fee calculation using Strategy Pattern (Hourly, FlatPlusHourly) — swappable at runtime
+- Membership support (Daily, Weekly, Monthly) with percentage discounts
+- Multiple payment methods (Cash, Card, UPI)
+- Real-time display panel showing availability per floor per spot type
 - Check-in and check-out with entry/exit time tracking
-- Fee calculation using Strategy Pattern (swappable at runtime)
-- Real-time availability updates per floor
-- Concurrency handling via Promise-based mutex (multiple vehicles entering/exiting simultaneously)
+- Concurrency handling via Promise-based mutex
 - Vehicle search by license plate
-- Ticket history and audit trail
+- Payment history and revenue tracking
 
 ## Getting Started
 
 ```bash
 # No external dependencies needed — uses only Node.js built-in modules
 
-# Run the demo (shows full system in action)
+# Run the demo (shows full entry-to-exit flow)
 npm run demo
 
 # Run tests (26 unit tests)
@@ -33,67 +36,81 @@ Requires Node.js >= 18.
 === Smart Parking Lot System Demo ===
 
 Created: City Center Parking with 3 floors
+Entry Gate: ENTRY-1 | Exit Gate: EXIT-1
 
---- Check-In ---
-Car KA-01-AB-1234 parked at F1-S6 | Ticket: T-1
-Car KA-02-CD-5678 parked at F1-S7 | Ticket: T-2
-Motorcycle KA-03-EF-9012 parked at F1-S1 | Ticket: T-3
-Bus KA-04-GH-3456 parked at F1-S16 | Ticket: T-4
+--- Membership Registered ---
+  KA-01-AB-1234 | monthly | 50% off
 
---- Real-Time Availability ---
-  Floor 1: 4/17 occupied | Available: Small=4, Medium=8, Large=1
-  Floor 2: 0/17 occupied | Available: Small=5, Medium=10, Large=2
-  Floor 3: 0/14 occupied | Available: Small=3, Medium=8, Large=3
+--- Vehicles Entering ---
+✓ KA-01-AB-1234 (MEMBER) → F1-S6
+✓ KA-02-CD-5678 → F1-S7
+✓ KA-03-EF-9012 → F1-S1
+✓ KA-04-GH-3456 → F1-S16
 
---- Check-Out (Hourly Strategy) ---
-  KA-01-AB-1234 | Duration: 1h | Fee: ₹20
+--- Vehicles Exiting (Payment Integrated) ---
+  KA-01-AB-1234 (MEMBER)
+    Original: ₹20 → Discount: ₹10 → Paid: ₹10 (card)
 
---- Switch to Flat+Hourly Strategy ---
-  KA-03-EF-9012 | Duration: 1h | Fee: ₹5
+  KA-02-CD-5678 (no membership)
+    Paid: ₹20 (upi)
 
---- Concurrent Check-Ins ---
-  CONC-1 → F1-S6
-  CONC-2 → F1-S8
-  CONC-3 → F1-S9
-  CONC-4 → F1-S10
-  CONC-5 → F1-S11
-
---- Completed Tickets ---
-  T-1 | KA-01-AB-1234 (car) | ₹20 | paid
-  T-3 | KA-03-EF-9012 (motorcycle) | ₹5 | paid
+--- Revenue Report ---
+  Total Revenue: ₹50
+  Transactions: 4
 ```
 
-## Usage Example
+## System Flow
 
-```javascript
-const { ParkingLot, Car, Motorcycle, Bus, FlatPlusHourlyStrategy } = require('./src');
-
-// Create a 2-floor parking lot
-ParkingLot.resetInstance();
-const lot = new ParkingLot('My Lot', [
-  { small: 5, medium: 10, large: 2 },  // Floor 1
-  { small: 3, medium: 8, large: 3 },   // Floor 2
-]);
-
-// Check in a car
-const ticket = await lot.checkIn(new Car('KA-01-AB-1234'));
-console.log(ticket.spot.id); // "F1-S6"
-
-// Check real-time availability
-const avail = lot.getAvailability();
-console.log(avail.floors[0].available); // { small: 5, medium: 9, large: 2 }
-
-// Find a parked vehicle
-const found = lot.findVehicle('KA-01-AB-1234');
-console.log(found.spotId); // "F1-S6"
-
-// Switch fee strategy at runtime (Strategy Pattern)
-lot.setFeeStrategy(new FlatPlusHourlyStrategy());
-
-// Check out — fee calculated automatically
-const { ticket: completed, amount } = await lot.checkOut('KA-01-AB-1234');
-console.log(`Fee: ₹${amount}`); // "Fee: ₹10" (flat fee for ≤1 hour)
 ```
+Vehicle arrives
+    │
+    ▼
+EntryGate.processEntry(vehicle)
+    ├── Scans license plate (checks for duplicates)
+    ├── SpotAllocationStrategy.allocateSpot(vehicle, floors)
+    ├── ParkingSpot.park(vehicle)
+    ├── Creates Ticket (records entry time)
+    ├── DisplayPanel.update()
+    └── Returns Ticket
+    
+Vehicle leaves
+    │
+    ▼
+ExitGate.processExit(licensePlate)
+    ├── Finds active Ticket
+    ├── FeeStrategy.calculate(ticket) → amount
+    ├── ParkingSpot.vacate()
+    ├── Ticket.complete(amount)
+    ├── DisplayPanel.update()
+    └── Returns { ticket, amount }
+    │
+    ▼
+PaymentProcessor.processPayment(ticket, amount, method)
+    ├── Checks Membership for discount
+    ├── Applies discount if valid
+    └── Returns Payment record
+```
+
+## Classes (17 total)
+
+| Class | Responsibility |
+|-------|---------------|
+| **ParkingLot** | Singleton facade — orchestrates gates, strategies, payment, concurrency |
+| **Floor** | Manages a collection of ParkingSpots (composition) |
+| **ParkingSpot** | Single space — manages occupancy (park/vacate/canFit) |
+| **Vehicle** (abstract) | Base class with licensePlate, type, requiredSpotSize |
+| **Motorcycle / Car / Bus** | Concrete vehicles — define required spot size |
+| **Ticket** | Tracks one parking session (entry/exit time, duration, status) |
+| **EntryGate** | Scans plate → allocates spot → issues ticket → updates display |
+| **ExitGate** | Scans ticket → calculates fee → vacates spot → returns amount |
+| **DisplayPanel** | Shows real-time availability per floor per spot type |
+| **HourlyFeeStrategy** | Fee = hours × rate per vehicle type |
+| **FlatPlusHourlyStrategy** | Fee = flat entry fee + hourly after first hour |
+| **FirstAvailableStrategy** | Allocation: exact-size-first, then any fit, floor by floor |
+| **NearestFirstStrategy** | Allocation: closest to gate, exact-size preferred |
+| **Membership** | Daily/Weekly/Monthly plans with percentage discount |
+| **PaymentProcessor** | Processes payments (Cash/Card/UPI), applies membership discounts |
+| **Payment** | Single transaction record (amount, method, discount, status) |
 
 ## Design Principles
 
@@ -101,122 +118,53 @@ console.log(`Fee: ₹${amount}`); // "Fee: ₹10" (flat fee for ≤1 hour)
 
 | Principle | Implementation |
 |-----------|---------------|
-| **Single Responsibility** | Each class has one job: `ParkingSpot` manages occupancy, `Floor` manages spots, `Ticket` tracks sessions, `ParkingLot` orchestrates |
-| **Open/Closed** | New fee strategies can be added without modifying `ParkingLot` — just create a new `FeeStrategy` subclass |
-| **Liskov Substitution** | `Motorcycle`, `Car`, `Bus` all substitute for `Vehicle` transparently |
-| **Interface Segregation** | `FeeStrategy` defines only `calculate()` — no bloated interfaces |
-| **Dependency Inversion** | `ParkingLot` depends on `FeeStrategy` abstraction, not concrete classes |
+| **Single Responsibility** | Each class has one job (Spot manages occupancy, Gate manages flow, Strategy calculates) |
+| **Open/Closed** | New fee/allocation strategies added without modifying existing code |
+| **Liskov Substitution** | Motorcycle, Car, Bus all substitute for Vehicle; any Strategy substitutes for its base |
+| **Interface Segregation** | Strategies define only `calculate()` or `allocateSpot()` — minimal interfaces |
+| **Dependency Inversion** | ParkingLot depends on Strategy abstractions, not concrete classes |
 
-### Design Patterns Used
+### Design Patterns
 
 | Pattern | Where | Why |
 |---------|-------|-----|
-| **Strategy** | `FeeCalculator.js` | Swap fee algorithms at runtime without changing client code |
-| **Singleton** | `ParkingLot` | Only one parking lot instance should exist |
-| **Composition** | `ParkingLot → Floor[] → ParkingSpot[]` | Strong ownership — floors don't exist without the lot |
-| **Template Method** | `Vehicle` (abstract base) | Subclasses define type-specific behavior |
+| **Strategy** | FeeCalculator, SpotAllocation | Swap algorithms at runtime |
+| **Singleton** | ParkingLot | One lot exists; throws on duplicate creation |
+| **Composition** | Lot → Floor → Spot | Strong ownership |
+| **Facade** | ParkingLot | Simple public API hides orchestration complexity |
+| **Encapsulation** | All classes (#private fields) | Prevents invalid state |
 
 ### Concurrency Handling
 
-The `ParkingLot` uses a Promise-based mutex (`#withLock`) to serialize check-in and check-out operations. This prevents race conditions where two vehicles could be assigned the same spot simultaneously.
-
-```javascript
-// Internal implementation
-#withLock(fn) {
-  const execute = this.#lock.then(fn);
-  this.#lock = execute.catch(() => {});
-  return execute;
-}
-```
+Promise-based mutex (`#withLock`) serializes check-in/check-out operations. The `.catch(() => {})` on the lock chain absorbs rejections so subsequent operations still execute — a failed check-in does not block future operations.
 
 ## Class Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         ParkingLot                                │
-│  (Singleton)                                                     │
+│                         ParkingLot (Singleton)                    │
 ├─────────────────────────────────────────────────────────────────┤
-│  - name: string                                                  │
-│  - floors: Floor[]                                               │
-│  - activeTickets: Map<string, Ticket>                            │
-│  - completedTickets: Ticket[]                                    │
-│  - feeStrategy: FeeStrategy                                      │
-│  - lock: Promise                                                 │
-├─────────────────────────────────────────────────────────────────┤
-│  + checkIn(vehicle): Promise<Ticket>                             │
-│  + checkOut(licensePlate): Promise<{ticket, amount}>             │
+│  + checkIn(vehicle): Ticket                                      │
+│  + checkOut(plate, method): {ticket, amount, payment}            │
 │  + getAvailability(): object                                     │
-│  + getFloorAvailability(floor): object                           │
-│  + findVehicle(plate): object|null                               │
-│  + setFeeStrategy(strategy): void                                │
-│  + getActiveTickets(): object[]                                  │
-│  + getHistory(): object[]                                        │
-└──────────────────────┬──────────────────────────────────────────┘
-                       │ has many (composition)
-                       ▼
-┌─────────────────────────────────┐
-│             Floor               │
-├─────────────────────────────────┤
-│  - floorNumber: number          │
-│  - spots: ParkingSpot[]         │
-├─────────────────────────────────┤
-│  + findAvailableSpot(vehicle)   │
-│  + findSpotById(id)             │
-│  + getAvailability()            │
-└──────────────┬──────────────────┘
-               │ has many (composition)
-               ▼
-┌─────────────────────────────────┐
-│          ParkingSpot            │
-├─────────────────────────────────┤
-│  - id: string                   │
-│  - size: SpotSize               │
-│  - isOccupied: boolean          │
-│  - vehicle: Vehicle|null        │
-├─────────────────────────────────┤
-│  + canFit(vehicle): boolean     │
-│  + park(vehicle): void          │
-│  + vacate(): Vehicle            │
-│  + toJSON(): object             │
-└─────────────────────────────────┘
+│  + setFeeStrategy(s) / setAllocationStrategy(s)                  │
+└───────┬──────────────┬──────────────┬───────────────────────────┘
+        │              │              │
+   EntryGate      ExitGate     DisplayPanel
+        │              │
+        ▼              ▼
+  SpotAllocation   FeeStrategy        PaymentProcessor
+  Strategy            │                     │
+    △                 △                     │ uses
+    │                 │                     ▼
+  ┌─┴──┐        ┌────┴────┐          Membership
+  │    │        │         │
+First  Nearest  Hourly  Flat+Hourly
 
-┌─────────────────────────────────┐
-│       Vehicle (abstract)        │
-├─────────────────────────────────┤
-│  - licensePlate: string         │
-│  - type: VehicleType            │
-│  - requiredSpotSize: SpotSize   │
-└──────────┬──────────────────────┘
-           │ extends
-     ┌─────┼─────┐
-     ▼     ▼     ▼
- Motorcycle Car  Bus
-
-┌─────────────────────────────────┐
-│            Ticket               │
-├─────────────────────────────────┤
-│  - id: string (auto-increment)  │
-│  - vehicle: Vehicle             │
-│  - spot: ParkingSpot            │
-│  - entryTime: Date              │
-│  - exitTime: Date|null          │
-│  - status: TicketStatus         │
-│  - amount: number               │
-├─────────────────────────────────┤
-│  + getDurationHours(): number   │
-│  + complete(amount): void       │
-│  + toJSON(): object             │
-└─────────────────────────────────┘
-
-┌─────────────────────────────────┐
-│  FeeStrategy (abstract)         │
-├─────────────────────────────────┤
-│  + calculate(ticket): number    │
-└──────────┬──────────────────────┘
-           │ implements
-     ┌─────┴─────────────┐
-     ▼                   ▼
-HourlyFeeStrategy  FlatPlusHourlyStrategy
+ParkingLot ──has many──▶ Floor ──has many──▶ ParkingSpot ──holds──▶ Vehicle
+                                                                       △
+                                                                  ┌────┼────┐
+                                                              Motorcycle Car Bus
 ```
 
 ## Fee Strategies
@@ -234,6 +182,22 @@ HourlyFeeStrategy  FlatPlusHourlyStrategy
 | Motorcycle | ₹5                  | ₹8                |
 | Car        | ₹10                 | ₹15               |
 | Bus        | ₹20                 | ₹40               |
+
+## Membership Plans
+
+| Type    | Duration | Discount Applied |
+|---------|----------|-----------------|
+| Daily   | 24 hours | Configurable %  |
+| Weekly  | 7 days   | Configurable %  |
+| Monthly | 30 days  | Configurable %  |
+
+Expired memberships automatically stop applying discounts.
+
+## Payment Methods
+
+- **Cash** — default
+- **Card** — credit/debit
+- **UPI** — digital payment
 
 ## Project Structure
 
@@ -264,8 +228,6 @@ smart-parking-lot-system/
 
 ## Testing
 
-Uses Node.js built-in test runner (no external test dependencies).
-
 ```bash
 npm test
 ```
@@ -283,7 +245,8 @@ npm test
 
 ## Notes
 
-- **No external dependencies** — the entire system uses only Node.js built-in modules. No npm install needed.
-- **Email simulation** — not applicable to this project (it's a design system, not an API).
-- **In-memory only** — all state lives in the ParkingLot singleton. Restarting clears everything.
-- **ID generation** — Ticket IDs use a static class-level counter (`Ticket.#nextId`), consistent across the system.
+- **No external dependencies** — uses only Node.js built-in modules (test runner, assert)
+- **Singleton safety** — ParkingLot throws if instantiated twice without `resetInstance()`
+- **In-memory only** — all state lives in the Singleton; restarting clears everything
+- **Email simulation** — not applicable (this is a design system, not an API)
+- **ID generation** — Ticket uses a static class-level counter (`Ticket.#nextId`)
