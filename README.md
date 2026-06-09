@@ -24,7 +24,7 @@ A Low-Level Design (LLD) implementation of a Smart Parking Lot System using Obje
 # Run the demo (shows full entry-to-exit flow)
 npm run demo
 
-# Run tests (26 unit tests)
+# Run tests (41 unit tests)
 npm test
 ```
 
@@ -240,8 +240,9 @@ npm test
 ✔ FeeCalculator (2 tests)
 ✔ ParkingLot (11 tests)
 ✔ Payment Integration (5 tests)
+✔ Edge Cases (10 tests)
 
-31 pass, 0 fail
+41 pass, 0 fail
 ```
 
 ## Notes

@@ -376,3 +376,85 @@ describe('Payment Integration', () => {
     assert.strictEqual(revenue, 40); // 20 + 20
   });
 });
+
+
+describe('Edge Cases', () => {
+  it('should throw when vacating an already-empty spot', () => {
+    const spot = new ParkingSpot(1, 1, SpotSize.MEDIUM);
+    assert.throws(() => spot.vacate(), /already empty/);
+  });
+
+  it('should throw when completing an already-paid ticket', () => {
+    const car = new Car('DOUBLE-001');
+    const spot = new ParkingSpot(1, 1, SpotSize.MEDIUM);
+    spot.park(car);
+
+    const ticket = new Ticket(car, spot);
+    ticket.complete(20);
+    assert.throws(() => ticket.complete(20), /already completed/);
+  });
+
+  it('should not apply discount when no membership exists', async () => {
+    const lot = new ParkingLot('Test Lot', [{ small: 2, medium: 3, large: 1 }]);
+    const car = new Car('NOMEM-001');
+
+    await lot.checkIn(car);
+    const { payment } = await lot.checkOut('NOMEM-001');
+
+    assert.strictEqual(payment.discount, 0);
+    assert.strictEqual(payment.finalAmount, payment.originalAmount);
+  });
+
+  it('should throw when Vehicle is instantiated directly', () => {
+    const { Vehicle } = require('../src/index');
+    assert.throws(() => new Vehicle('X', 'car', 'medium'), /abstract/);
+  });
+
+  it('NearestFirstStrategy should prefer floor 1 over exact match on floor 2', async () => {
+    const { NearestFirstStrategy } = require('../src/index');
+
+    const lot = new ParkingLot('Test Lot', [
+      { small: 0, medium: 0, large: 1 },  // Floor 1: only large spots
+      { small: 0, medium: 3, large: 0 },  // Floor 2: only medium spots
+    ], undefined, new NearestFirstStrategy());
+
+    const car = new Car('NEAR-001');
+    const ticket = await lot.checkIn(car);
+
+    // NearestFirst: car needs MEDIUM, floor 1 has no exact match but large fits
+    // Should park on floor 1 (nearest) in the large spot
+    assert.strictEqual(ticket.spot.id, 'F1-S1');
+  });
+
+  it('should allocate bus to large spot correctly', async () => {
+    const lot = new ParkingLot('Test Lot', [{ small: 2, medium: 3, large: 2 }]);
+    const bus = new Bus('BUS-001');
+
+    const ticket = await lot.checkIn(bus);
+    assert.strictEqual(ticket.spot.size, 'large');
+  });
+
+  it('should reject bus when only small/medium spots available', async () => {
+    const lot = new ParkingLot('Test Lot', [{ small: 5, medium: 5, large: 0 }]);
+    const bus = new Bus('BUS-002');
+
+    await assert.rejects(() => lot.checkIn(bus), /No available spot/);
+  });
+
+  it('should throw on invalid payment method', async () => {
+    const lot = new ParkingLot('Test Lot', [{ small: 2, medium: 3, large: 1 }]);
+    const car = new Car('BADPAY-001');
+
+    await lot.checkIn(car);
+    await assert.rejects(() => lot.checkOut('BADPAY-001', 'bitcoin'), /Invalid payment method/);
+  });
+
+  it('should throw when ParkingLot created with empty floorConfigs', () => {
+    assert.throws(() => new ParkingLot('Empty', []), /non-empty array/);
+  });
+
+  it('should throw when ParkingLot singleton created twice', () => {
+    new ParkingLot('First', [{ small: 1, medium: 1, large: 1 }]);
+    assert.throws(() => new ParkingLot('Second', [{ small: 1, medium: 1, large: 1 }]), /already exists/);
+  });
+});
