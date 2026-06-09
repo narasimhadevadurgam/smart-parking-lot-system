@@ -5,6 +5,7 @@ const { FirstAvailableStrategy } = require('./SpotAllocationStrategy');
 const { EntryGate } = require('./EntryGate');
 const { ExitGate } = require('./ExitGate');
 const { DisplayPanel } = require('./DisplayPanel');
+const { PaymentProcessor } = require('./PaymentProcessor');
 
 /**
  * ParkingLot is the main facade class.
@@ -27,6 +28,7 @@ class ParkingLot {
   #entryGate;
   #exitGate;
   #displayPanel;
+  #paymentProcessor;
   #lock; // Promise-based mutex for concurrency
 
   /**
@@ -37,7 +39,11 @@ class ParkingLot {
    */
   constructor(name, floorConfigs, feeStrategy, allocationStrategy) {
     if (ParkingLot.#instance) {
-      return ParkingLot.#instance;
+      throw new Error('ParkingLot instance already exists. Use ParkingLot.resetInstance() before creating a new one.');
+    }
+
+    if (!floorConfigs || !Array.isArray(floorConfigs) || floorConfigs.length === 0) {
+      throw new Error('floorConfigs must be a non-empty array of floor configurations.');
     }
 
     this.#name = name;
@@ -55,6 +61,9 @@ class ParkingLot {
 
     // Create display panel
     this.#displayPanel = new DisplayPanel(this.#floors);
+
+    // Create payment processor
+    this.#paymentProcessor = new PaymentProcessor();
 
     // Create gates
     this.#entryGate = new EntryGate(
@@ -96,6 +105,10 @@ class ParkingLot {
     return this.#displayPanel;
   }
 
+  get paymentProcessor() {
+    return this.#paymentProcessor;
+  }
+
   /**
    * Set a different fee calculation strategy (updates ExitGate too).
    * @param {FeeStrategy} strategy
@@ -129,14 +142,18 @@ class ParkingLot {
 
   /**
    * Check out a vehicle via the exit gate.
+   * Integrates PaymentProcessor for membership discounts.
    * Uses lock for concurrency control.
    *
    * @param {string} licensePlate
-   * @returns {Promise<{ticket, amount}>}
+   * @param {string} paymentMethod - 'cash', 'card', or 'upi' (default: 'cash')
+   * @returns {Promise<{ticket, amount, payment}>}
    */
-  async checkOut(licensePlate) {
+  async checkOut(licensePlate, paymentMethod = 'cash') {
     return this.#withLock(async () => {
-      return this.#exitGate.processExit(licensePlate);
+      const { ticket, amount } = this.#exitGate.processExit(licensePlate);
+      const payment = this.#paymentProcessor.processPayment(ticket, amount, paymentMethod);
+      return { ticket, amount: payment.finalAmount, payment };
     });
   }
 
@@ -200,6 +217,13 @@ class ParkingLot {
 
   /**
    * Promise-based mutex for concurrency control.
+   * Ensures only one check-in/check-out executes at a time.
+   * Errors are logged and re-thrown (not swallowed).
+   *
+   * The .catch(() => {}) on the lock chain absorbs rejections so that
+   * subsequent operations can still execute — a failed check-in should
+   * not block future check-ins from running.
+   *
    * @param {Function} fn - Async function to execute under lock
    * @returns {Promise}
    */
@@ -208,6 +232,7 @@ class ParkingLot {
       console.error(`[ParkingLot Error] ${err.message}`);
       throw err;
     });
+    // Absorb rejection so the chain stays alive for next operation
     this.#lock = execute.catch(() => {});
     return execute;
   }

@@ -56,6 +56,7 @@ class FirstAvailableStrategy extends SpotAllocationStrategy {
 /**
  * NearestFirstStrategy - finds the closest available spot to the gate.
  * Assumes lower floor number = closer to gate, lower spot number = closer to entrance.
+ * Prefers exact-size match within each floor before falling back to larger spots.
  */
 class NearestFirstStrategy extends SpotAllocationStrategy {
   /**
@@ -66,10 +67,19 @@ class NearestFirstStrategy extends SpotAllocationStrategy {
   allocateSpot(vehicle, floors) {
     // Search floor by floor (floor 1 = nearest to gate)
     for (const floor of floors) {
-      // Within each floor, find the first (nearest) spot that fits
-      const spot = floor.spots.find((spot) => spot.canFit(vehicle));
-      if (spot) return spot;
+      // Prefer exact size match first (nearest spot of correct size)
+      const exactMatch = floor.spots.find(
+        (spot) => !spot.isOccupied && spot.size === vehicle.requiredSpotSize
+      );
+      if (exactMatch) return exactMatch;
     }
+
+    // Second pass: any spot that can fit, nearest first
+    for (const floor of floors) {
+      const anyMatch = floor.spots.find((spot) => spot.canFit(vehicle));
+      if (anyMatch) return anyMatch;
+    }
+
     return null;
   }
 }
