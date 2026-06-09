@@ -339,16 +339,14 @@ describe('Payment Integration', () => {
     assert.strictEqual(payment.finalAmount, 10);
   });
 
-  it('should not apply discount for expired membership', async () => {
+  it('should apply discount for valid membership', async () => {
     const { Membership } = require('../src/index');
 
     const lot = new ParkingLot('Test Lot', [{ small: 2, medium: 3, large: 1 }]);
     const car = new Car('EXP-001');
 
-    // Create an already-expired membership (hack: set expiry in past)
+    // Create a valid daily membership (50% discount)
     const membership = new Membership('EXP-001', 'daily', 50);
-    // Force expiry by checking — daily membership is valid for 24h so it won't be expired
-    // Instead just verify non-member gets no discount
     lot.paymentProcessor.addMembership(membership);
 
     await lot.checkIn(car);
