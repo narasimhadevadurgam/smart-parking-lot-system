@@ -1,5 +1,5 @@
 cd /d C:\Users\Narasimha.Devadurgam\source\repos\smart-parking-lot-system
-del push2.bat
+del push3.bat
 git add -A
-git commit -m "feat: add Membership, PaymentProcessor, Discount support"
+git commit -m "docs: update project structure in README"
 git push origin main

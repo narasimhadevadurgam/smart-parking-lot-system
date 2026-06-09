@@ -240,17 +240,23 @@ HourlyFeeStrategy  FlatPlusHourlyStrategy
 ```
 smart-parking-lot-system/
 ├── src/
-│   ├── index.js            ← Public API / barrel exports
-│   ├── demo.js             ← Driver file showing system in action
-│   ├── enums.js            ← VehicleType, SpotSize, TicketStatus constants
-│   ├── Vehicle.js          ← Abstract Vehicle + Motorcycle, Car, Bus
-│   ├── ParkingSpot.js      ← Single parking space (occupancy management)
-│   ├── Floor.js            ← Floor with spot allocation algorithm
-│   ├── Ticket.js           ← Parking session lifecycle
-│   ├── FeeCalculator.js    ← Strategy pattern: HourlyFee, FlatPlusHourly
-│   └── ParkingLot.js       ← Main facade (Singleton, concurrency, orchestration)
+│   ├── index.js                  ← Public API / barrel exports
+│   ├── demo.js                   ← Driver file showing full entry-to-exit flow
+│   ├── enums.js                  ← VehicleType, SpotSize, TicketStatus constants
+│   ├── Vehicle.js                ← Abstract Vehicle + Motorcycle, Car, Bus
+│   ├── ParkingSpot.js            ← Single parking space (occupancy management)
+│   ├── Floor.js                  ← Floor with spots (composition)
+│   ├── Ticket.js                 ← Parking session lifecycle
+│   ├── FeeCalculator.js          ← Strategy: HourlyFee, FlatPlusHourly
+│   ├── SpotAllocationStrategy.js ← Strategy: FirstAvailable, NearestFirst
+│   ├── EntryGate.js              ← Scan plate, allocate spot, issue ticket
+│   ├── ExitGate.js               ← Calculate fee, vacate spot, collect payment
+│   ├── DisplayPanel.js           ← Real-time availability per floor/spot type
+│   ├── Membership.js             ← Daily/Weekly/Monthly plans with discounts
+│   ├── PaymentProcessor.js       ← Multi-method payment (Cash/Card/UPI)
+│   └── ParkingLot.js             ← Main facade (Singleton, gates, concurrency)
 ├── test/
-│   └── parking.test.js     ← 26 unit tests (Node.js built-in test runner)
+│   └── parking.test.js           ← 26 unit tests (Node.js built-in test runner)
 ├── package.json
 ├── .gitignore
 └── README.md
