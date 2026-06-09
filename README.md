@@ -239,8 +239,9 @@ npm test
 ✔ Ticket (2 tests)
 ✔ FeeCalculator (2 tests)
 ✔ ParkingLot (11 tests)
+✔ Payment Integration (5 tests)
 
-26 pass, 0 fail
+31 pass, 0 fail
 ```
 
 ## Notes
@@ -250,3 +251,5 @@ npm test
 - **In-memory only** — all state lives in the Singleton; restarting clears everything
 - **Email simulation** — not applicable (this is a design system, not an API)
 - **ID generation** — Ticket uses a static class-level counter (`Ticket.#nextId`)
+- **NearestFirstStrategy** — uses interleaved per-floor search (exact match + any fit per floor before moving to next) for genuinely "nearest" behavior
+- **Floor.findAvailableSpot()** — kept as a utility method for standalone Floor usage; main flow uses SpotAllocationStrategy
