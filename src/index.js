@@ -9,12 +9,17 @@ const { EntryGate } = require('./EntryGate');
 const { ExitGate } = require('./ExitGate');
 const { DisplayPanel } = require('./DisplayPanel');
 const { ParkingLot } = require('./ParkingLot');
+const { Membership, MembershipType } = require('./Membership');
+const { PaymentProcessor, PaymentMethod, PaymentStatus, Payment } = require('./PaymentProcessor');
 
 module.exports = {
   // Enums
   VehicleType,
   SpotSize,
   TicketStatus,
+  MembershipType,
+  PaymentMethod,
+  PaymentStatus,
 
   // Core Classes
   Vehicle,
@@ -41,6 +46,11 @@ module.exports = {
 
   // Display
   DisplayPanel,
+
+  // Membership & Payment
+  Membership,
+  PaymentProcessor,
+  Payment,
 
   // Facade
   ParkingLot,
