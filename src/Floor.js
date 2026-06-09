@@ -47,9 +47,9 @@ class Floor {
   }
 
   /**
-   * Find the first available spot that can fit the vehicle.
-   * Algorithm: Prefers exact-size match first to minimize waste,
-   * then falls back to any larger spot.
+   * Find an available spot for the vehicle (utility method for standalone use).
+   * Note: In the main flow, SpotAllocationStrategy handles allocation.
+   * This method exists for direct Floor usage in tests or simple scenarios.
    *
    * @param {Vehicle} vehicle - The vehicle needing a spot
    * @returns {ParkingSpot|null} Available spot, or null if none found
