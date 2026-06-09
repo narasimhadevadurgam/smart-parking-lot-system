@@ -1,15 +1,19 @@
 const { Floor } = require('./Floor');
 const { Ticket } = require('./Ticket');
 const { HourlyFeeStrategy } = require('./FeeCalculator');
+const { FirstAvailableStrategy } = require('./SpotAllocationStrategy');
+const { EntryGate } = require('./EntryGate');
+const { ExitGate } = require('./ExitGate');
+const { DisplayPanel } = require('./DisplayPanel');
 
 /**
  * ParkingLot is the main facade class.
  * Composition: ParkingLot → Floor[] → ParkingSpot[]
- * 
+ *
  * Singleton Pattern: Only one parking lot instance.
- * Dependency Inversion: Depends on FeeStrategy abstraction, not concrete implementation.
- * 
- * Handles concurrency via a simple lock mechanism for check-in/check-out.
+ * Uses EntryGate/ExitGate for vehicle flow.
+ * Uses SpotAllocationStrategy for spot assignment.
+ * Uses FeeStrategy for fee calculation.
  */
 class ParkingLot {
   static #instance = null;
@@ -19,9 +23,19 @@ class ParkingLot {
   #activeTickets; // Map<licensePlate, Ticket>
   #completedTickets; // Array of completed tickets
   #feeStrategy;
-  #lock; // Simple mutex for concurrency
+  #allocationStrategy;
+  #entryGate;
+  #exitGate;
+  #displayPanel;
+  #lock; // Promise-based mutex for concurrency
 
-  constructor(name, floorConfigs, feeStrategy) {
+  /**
+   * @param {string} name - Parking lot name
+   * @param {object[]} floorConfigs - Array of { small, medium, large } configs per floor
+   * @param {FeeStrategy} feeStrategy - Fee calculation strategy
+   * @param {SpotAllocationStrategy} allocationStrategy - Spot allocation strategy
+   */
+  constructor(name, floorConfigs, feeStrategy, allocationStrategy) {
     if (ParkingLot.#instance) {
       return ParkingLot.#instance;
     }
@@ -31,12 +45,33 @@ class ParkingLot {
     this.#activeTickets = new Map();
     this.#completedTickets = [];
     this.#feeStrategy = feeStrategy || new HourlyFeeStrategy();
+    this.#allocationStrategy = allocationStrategy || new FirstAvailableStrategy();
     this.#lock = Promise.resolve();
 
     // Create floors based on config
     floorConfigs.forEach((config, index) => {
       this.#floors.push(new Floor(index + 1, config));
     });
+
+    // Create display panel
+    this.#displayPanel = new DisplayPanel(this.#floors);
+
+    // Create gates
+    this.#entryGate = new EntryGate(
+      'ENTRY-1',
+      this.#floors,
+      this.#allocationStrategy,
+      this.#activeTickets,
+      this.#displayPanel
+    );
+
+    this.#exitGate = new ExitGate(
+      'EXIT-1',
+      this.#feeStrategy,
+      this.#activeTickets,
+      this.#completedTickets,
+      this.#displayPanel
+    );
 
     ParkingLot.#instance = this;
   }
@@ -49,86 +84,79 @@ class ParkingLot {
     return this.#floors.length;
   }
 
+  get entryGate() {
+    return this.#entryGate;
+  }
+
+  get exitGate() {
+    return this.#exitGate;
+  }
+
+  get displayPanel() {
+    return this.#displayPanel;
+  }
+
   /**
-   * Set a different fee calculation strategy
-   * (Strategy Pattern - swap at runtime)
+   * Set a different fee calculation strategy (updates ExitGate too).
+   * @param {FeeStrategy} strategy
    */
   setFeeStrategy(strategy) {
     this.#feeStrategy = strategy;
+    this.#exitGate.setFeeStrategy(strategy);
   }
 
   /**
-   * Check in a vehicle - find a spot and issue a ticket.
-   * Uses lock to handle concurrent access.
+   * Set a different spot allocation strategy (updates EntryGate too).
+   * @param {SpotAllocationStrategy} strategy
+   */
+  setAllocationStrategy(strategy) {
+    this.#allocationStrategy = strategy;
+    this.#entryGate.setAllocationStrategy(strategy);
+  }
+
+  /**
+   * Check in a vehicle via the entry gate.
+   * Uses lock for concurrency control.
+   *
+   * @param {Vehicle} vehicle
+   * @returns {Promise<Ticket>}
    */
   async checkIn(vehicle) {
     return this.#withLock(async () => {
-      // Check if vehicle is already parked
-      if (this.#activeTickets.has(vehicle.licensePlate)) {
-        throw new Error(`Vehicle ${vehicle.licensePlate} is already parked.`);
-      }
-
-      // Find available spot across all floors
-      let spot = null;
-      for (const floor of this.#floors) {
-        spot = floor.findAvailableSpot(vehicle);
-        if (spot) break;
-      }
-
-      if (!spot) {
-        throw new Error(`No available spot for ${vehicle.type} (${vehicle.licensePlate}).`);
-      }
-
-      // Park the vehicle and create ticket
-      spot.park(vehicle);
-      const ticket = new Ticket(vehicle, spot);
-      this.#activeTickets.set(vehicle.licensePlate, ticket);
-
-      return ticket;
+      return this.#entryGate.processEntry(vehicle);
     });
   }
 
   /**
-   * Check out a vehicle - calculate fee, vacate spot, complete ticket.
-   * Uses lock to handle concurrent access.
+   * Check out a vehicle via the exit gate.
+   * Uses lock for concurrency control.
+   *
+   * @param {string} licensePlate
+   * @returns {Promise<{ticket, amount}>}
    */
   async checkOut(licensePlate) {
     return this.#withLock(async () => {
-      const ticket = this.#activeTickets.get(licensePlate);
-      if (!ticket) {
-        throw new Error(`No active ticket found for vehicle ${licensePlate}.`);
-      }
-
-      // Calculate fee
-      const amount = this.#feeStrategy.calculate(ticket);
-
-      // Vacate the spot
-      ticket.spot.vacate();
-
-      // Complete the ticket
-      ticket.complete(amount);
-
-      // Move from active to completed
-      this.#activeTickets.delete(licensePlate);
-      this.#completedTickets.push(ticket);
-
-      return { ticket, amount };
+      return this.#exitGate.processExit(licensePlate);
     });
   }
 
   /**
-   * Get real-time availability across all floors
+   * Get real-time availability across all floors.
+   * @returns {object}
    */
   getAvailability() {
+    this.#displayPanel.update();
     return {
       name: this.#name,
-      floors: this.#floors.map((floor) => floor.getAvailability()),
+      floors: this.#displayPanel.getAvailability(),
       totalActive: this.#activeTickets.size,
     };
   }
 
   /**
-   * Get availability for a specific floor
+   * Get availability for a specific floor.
+   * @param {number} floorNumber
+   * @returns {object}
    */
   getFloorAvailability(floorNumber) {
     const floor = this.#floors[floorNumber - 1];
@@ -139,7 +167,9 @@ class ParkingLot {
   }
 
   /**
-   * Find a vehicle by license plate
+   * Find a vehicle by license plate.
+   * @param {string} licensePlate
+   * @returns {object|null}
    */
   findVehicle(licensePlate) {
     const ticket = this.#activeTickets.get(licensePlate);
@@ -153,14 +183,16 @@ class ParkingLot {
   }
 
   /**
-   * Get all active tickets
+   * Get all active tickets.
+   * @returns {object[]}
    */
   getActiveTickets() {
     return Array.from(this.#activeTickets.values()).map((t) => t.toJSON());
   }
 
   /**
-   * Get completed tickets history
+   * Get completed tickets history.
+   * @returns {object[]}
    */
   getHistory() {
     return this.#completedTickets.map((t) => t.toJSON());
@@ -168,24 +200,20 @@ class ParkingLot {
 
   /**
    * Promise-based mutex for concurrency control.
-   * Ensures only one check-in/check-out executes at a time.
-   * Errors are logged and re-thrown (not swallowed).
-   *
    * @param {Function} fn - Async function to execute under lock
-   * @returns {Promise} Result of fn
+   * @returns {Promise}
    */
   #withLock(fn) {
     const execute = this.#lock.then(fn).catch((err) => {
       console.error(`[ParkingLot Error] ${err.message}`);
-      throw err; // Re-throw so caller gets the error
+      throw err;
     });
-    // Keep the lock chain alive regardless of success/failure
     this.#lock = execute.catch(() => {});
     return execute;
   }
 
   /**
-   * Reset singleton (for testing)
+   * Reset singleton (for testing).
    */
   static resetInstance() {
     ParkingLot.#instance = null;
